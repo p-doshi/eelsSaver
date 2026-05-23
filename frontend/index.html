@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eelgrass Watch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <a href="#main" class="sr-only">Skip to content</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-label="Eelgrass Watch logo">
+        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <path d="M14 46C21 30 28 19 42 10C38 20 36 29 37 42" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+          <path d="M22 54C29 42 35 36 50 28" stroke="currentColor" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+        </svg>
+      </div>
+      <div>
+        <div class="eyebrow"></div>
+        <h1>EelSaver</h1>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Switch theme">☼</button>
+    </div>
+  </header>
+
+  <main id="main" class="layout">
+    <aside class="panel sidebar">
+      <div class="section">
+        <p class="kicker">Live coastal risk explorer</p>
+        <h2>Map probable eelgrass decline hotspots</h2>
+        <p class="muted">
+          Hover known hotspots, inspect confidence and likely drivers, or run a live Sentinel-2 inference for a new area.
+        </p>
+      </div>
+
+      <div class="section card-stack">
+        <div class="metric-card">
+          <span>Known hotspots</span>
+          <strong id="hotspotCount">--</strong>
+        </div>
+        <div class="metric-card">
+          <span>Active model</span>
+          <strong>GBM surrogate</strong>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Run live area</h3>
+        <form id="inferenceForm" class="form">
+          <label>
+            Area name
+            <input name="name" placeholder="Mahone Bay test area" required />
+          </label>
+
+          <label>
+            Bounding box
+            <input name="bbox" placeholder="-64.20,44.58,-64.05,44.68" required />
+          </label>
+
+          <div class="grid2">
+            <label>
+              Start date
+              <input type="date" name="datetime_start" required />
+            </label>
+            <label>
+              End date
+              <input type="date" name="datetime_end" required />
+            </label>
+          </div>
+
+          <label>
+            Max cloud %
+            <input type="number" name="max_cloud_cover" value="20" min="0" max="100" />
+          </label>
+
+          <button type="submit" class="btn btn-primary">Run live inference</button>
+        </form>
+      </div>
+
+      <div class="section">
+        <h3>Job status</h3>
+        <div class="job-box" id="jobBox">
+          <div class="progress-line"><span id="progressBar"></span></div>
+          <p id="jobStage">Waiting for request…</p>
+          <p id="jobFact" class="muted">Fun facts appear while the model runs.</p>
+        </div>
+      </div>
+    </aside>
+
+    <section class="map-shell">
+      <div class="map-overlay panel">
+        <p class="kicker">Interactive risk map</p>
+        <h3>Known and predicted decline zones</h3>
+        <p class="muted">Polygons are styled by risk; click to inspect ecological signals and report references.</p>
+      </div>
+
+      <div id="map"></div>
+
+      <div class="info-drawer panel" id="infoDrawer">
+        <div class="drawer-head">
+          <div>
+            <p class="kicker">Area details</p>
+            <h3 id="drawerTitle">Select a hotspot</h3>
+          </div>
+          <span class="pill" id="drawerRisk">—</span>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat">
+            <span>Estimated eelgrass</span>
+            <strong id="eelgrassValue">—</strong>
+          </div>
+          <div class="stat">
+            <span>90-day depletion risk</span>
+            <strong id="riskValue">—</strong>
+          </div>
+          <div class="stat">
+            <span>Confidence</span>
+            <strong id="confidenceValue">—</strong>
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <h4>Summary</h4>
+          <p id="summaryText">Hover or click a hotspot polygon to populate details.</p>
+        </div>
+
+        <div class="detail-block">
+          <h4>Likely drivers</h4>
+          <ul id="driverList" class="tag-list"></ul>
+        </div>
+
+        <div class="detail-block">
+          <h4>Reports</h4>
+          <ul id="reportList" class="report-list"></ul>
+        </div>
+        <div class="detail-block">
+            <h4>Satellite view</h4>
+            <div class="layer-toggle">
+                <button class="layer-btn active" data-layer-mode="stress">Stress overlay</button>
+                <button class="layer-btn" data-layer-mode="risk">Risk overlay</button>
+                <button class="layer-btn" data-layer-mode="preview">Preview only</button>
+            </div>
+            <p id="imageryCredit" class="muted">No imagery loaded yet.</p>
+            </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="./app.js"></script>
+</body>
+</html>

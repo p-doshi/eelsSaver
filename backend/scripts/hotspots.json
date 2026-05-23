@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ns-001",
+    "name": "St. Margarets Bay",
+    "bbox": [-64.178, 44.614, -64.145, 44.632],
+    "date_start": "2025-06-01",
+    "date_end": "2025-09-30",
+    "max_cloud": 15
+  },
+  {
+    "id": "qc-001",
+    "name": "Forillon Anchor Site",
+    "bbox": [-64.469, 48.913, -64.412, 48.944],
+    "date_start": "2025-06-01",
+    "date_end": "2025-09-30",
+    "max_cloud": 15
+  }
+]

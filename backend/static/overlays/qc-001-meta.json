@@ -1,0 +1,18 @@
+{
+  "id": "qc-001",
+  "name": "Forillon Anchor Site",
+  "source_item_id": "S2B_MSIL2A_20250927T152629_R068_T20ULV_20250927T204618",
+  "datetime": "2025-09-27T15:26:29.024000Z",
+  "eo_cloud_cover": 0.113337,
+  "bbox": [
+    -64.469,
+    48.913,
+    -64.412,
+    48.944
+  ],
+  "outputs": {
+    "preview_url": "/static/overlays/qc-001-truecolor.webp",
+    "stress_overlay_url": "/static/overlays/qc-001-stress.png",
+    "risk_overlay_url": "/static/overlays/qc-001-risk.png"
+  }
+}

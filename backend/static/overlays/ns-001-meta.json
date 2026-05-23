@@ -1,0 +1,18 @@
+{
+  "id": "ns-001",
+  "name": "St. Margarets Bay",
+  "source_item_id": "S2C_MSIL2A_20250929T151701_R025_T20TLQ_20250929T195817",
+  "datetime": "2025-09-29T15:17:01.025000Z",
+  "eo_cloud_cover": 0.000753,
+  "bbox": [
+    -64.178,
+    44.614,
+    -64.145,
+    44.632
+  ],
+  "outputs": {
+    "preview_url": "/static/overlays/ns-001-truecolor.webp",
+    "stress_overlay_url": "/static/overlays/ns-001-stress.png",
+    "risk_overlay_url": "/static/overlays/ns-001-risk.png"
+  }
+}
