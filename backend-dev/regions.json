@@ -1,0 +1,98 @@
+{
+  "regions": [
+    {
+      "id": "forillon",
+      "name": "Forillon National Park (QC) — training",
+      "role": "training",
+      "beds": [
+        {
+          "id": "forillon_ouest",
+          "site": "Ouest",
+          "polygon": [[-64.458, 48.792], [-64.448, 48.792], [-64.448, 48.808], [-64.458, 48.808]]
+        },
+        {
+          "id": "forillon_marais",
+          "site": "Marais",
+          "polygon": [[-64.438, 48.798], [-64.428, 48.798], [-64.428, 48.814], [-64.438, 48.814]]
+        },
+        {
+          "id": "forillon_sud",
+          "site": "Sud",
+          "polygon": [[-64.443, 48.778], [-64.433, 48.778], [-64.433, 48.794], [-64.443, 48.794]]
+        }
+      ]
+    },
+    {
+      "id": "antigonish",
+      "name": "Antigonish Harbour (NS)",
+      "role": "inference",
+      "beds": [
+        {
+          "id": "antigonish_main",
+          "site": "Antigonish_Main",
+          "polygon": [[-61.94, 45.61], [-61.88, 45.61], [-61.88, 45.65], [-61.94, 45.65]]
+        }
+      ]
+    },
+    {
+      "id": "bras_dor",
+      "name": "Bras d'Or Lake (NS)",
+      "role": "inference",
+      "beds": [
+        {
+          "id": "bras_dor_st_andrews",
+          "site": "St_Andrews_Channel",
+          "polygon": [[-60.65, 46.12], [-60.58, 46.12], [-60.58, 46.17], [-60.65, 46.17]]
+        }
+      ]
+    },
+    {
+      "id": "malpeque",
+      "name": "Malpeque Bay (PEI)",
+      "role": "inference",
+      "beds": [
+        {
+          "id": "malpeque_north",
+          "site": "Malpeque_North",
+          "polygon": [[-63.78, 46.55], [-63.70, 46.55], [-63.70, 46.62], [-63.78, 46.62]]
+        }
+      ]
+    },
+    {
+      "id": "miramichi",
+      "name": "Miramichi Bay (NB)",
+      "role": "inference",
+      "beds": [
+        {
+          "id": "miramichi_inner",
+          "site": "Miramichi_Inner",
+          "polygon": [[-65.10, 47.10], [-65.02, 47.10], [-65.02, 47.16], [-65.10, 47.16]]
+        }
+      ]
+    },
+    {
+      "id": "pictou",
+      "name": "Pictou Harbour (NS) — Pictou Landing First Nation",
+      "role": "inference",
+      "beds": [
+        {
+          "id": "pictou_landing",
+          "site": "Pictou_Landing",
+          "polygon": [[-62.72, 45.65], [-62.66, 45.65], [-62.66, 45.70], [-62.72, 45.70]]
+        }
+      ]
+    },
+    {
+      "id": "placentia",
+      "name": "Placentia Bay (NL)",
+      "role": "inference",
+      "beds": [
+        {
+          "id": "placentia_north",
+          "site": "Placentia_North",
+          "polygon": [[-54.10, 47.40], [-54.02, 47.40], [-54.02, 47.46], [-54.10, 47.46]]
+        }
+      ]
+    }
+  ]
+}

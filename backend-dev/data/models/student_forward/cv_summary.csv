@@ -1,0 +1,8 @@
+fold,model,metric,value,test_years
+0,gpi,mae,0.021343545951917564,[2017]
+0,gpi,r2,-3.69583596428007e+28,[2017]
+0,decline,mae,1.0,[2017]
+0,stress,macro_f1,0.0,[2017]
+1,gpi,mae,0.016299507707924956,[2018]
+1,decline,mae,0.7050541555729462,[2018]
+1,stress,macro_f1,0.0,[2018]

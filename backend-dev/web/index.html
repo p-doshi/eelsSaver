@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>eelsSaver — Pan-Atlantic Eelgrass EEWS</title>
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin="" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, sans-serif; }
+    #map { position: absolute; top: 0; bottom: 0; left: 320px; right: 0; }
+    #sidebar {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 320px;
+      padding: 16px; overflow-y: auto;
+      background: #f7f7f8; border-right: 1px solid #ddd;
+    }
+    h1 { margin: 0 0 8px; font-size: 18px; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 12px;
+      font-size: 12px; font-weight: 600; color: white;
+    }
+    .High   { background: #b91c1c; }
+    .Medium { background: #d97706; }
+    .Low    { background: #16a34a; }
+    .bed {
+      padding: 10px; margin-bottom: 8px; background: white;
+      border-radius: 6px; border: 1px solid #e5e5e5; cursor: pointer;
+    }
+    .bed:hover { background: #eef; }
+    .bed h3 { margin: 0 0 4px; font-size: 14px; }
+    .meta { font-size: 12px; color: #555; }
+    #detail { margin-top: 12px; padding: 12px; background: white; border-radius: 6px; display: none; }
+    #detail h2 { margin-top: 0; font-size: 16px; }
+    .shap-row { font-size: 12px; margin: 4px 0; }
+    .shap-bar { display: inline-block; height: 6px; background: #4f46e5; vertical-align: middle; margin-right: 4px; }
+    #status { font-size: 11px; color: #777; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h1>eelsSaver</h1>
+    <div id="status">connecting…</div>
+    <div id="beds"></div>
+    <div id="detail"></div>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const API = (location.port === '8000')
+      ? '/api'
+      : 'http://localhost:8000/api';
+
+    const RISK_COLOR = { High: '#b91c1c', Medium: '#d97706', Low: '#16a34a' };
+
+    // Atlantic Canada centroid
+    const map = L.map('map').setView([46.5, -62.0], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+    }).addTo(map);
+
+    const bedLayer = L.layerGroup().addTo(map);
+    const pixelLayer = L.layerGroup().addTo(map);
+
+    async function fetchJSON(path) {
+      const r = await fetch(API + path);
+      if (!r.ok) throw new Error(`${path} → ${r.status}`);
+      return r.json();
+    }
+
+    async function loadStatus() {
+      try {
+        const s = await fetchJSON('/status');
+        document.getElementById('status').textContent =
+          `${s.bed_count} beds | model ${s.model_version || '—'} | refreshed ${s.last_refresh ? new Date(s.last_refresh).toLocaleString() : '—'}`;
+      } catch (e) {
+        document.getElementById('status').textContent = 'API unreachable';
+      }
+    }
+
+    async function loadBeds() {
+      const beds = await fetchJSON('/beds');
+      const sidebar = document.getElementById('beds');
+      sidebar.innerHTML = '';
+      bedLayer.clearLayers();
+
+      for (const b of beds) {
+        // Sidebar card
+        const card = document.createElement('div');
+        card.className = 'bed';
+        card.innerHTML = `
+          <h3>${b.bed_id} <span class="badge ${b.bed_risk_tier}">${b.bed_risk_tier || '—'}</span></h3>
+          <div class="meta">GPI ${b.bed_GPI?.toFixed(2) ?? '—'} | decline ${(b.bed_decline_prob * 100)?.toFixed(0) ?? '—'}%</div>
+          <div class="meta">${b.dominant_stress || '—'} • ${b.bed_confidence || '—'} conf.</div>
+        `;
+        card.onclick = () => showDetail(b.bed_id);
+        sidebar.appendChild(card);
+      }
+    }
+
+    async function showDetail(bedId) {
+      const d = await fetchJSON('/beds/' + encodeURIComponent(bedId));
+      const det = document.getElementById('detail');
+      det.style.display = 'block';
+      det.innerHTML = `
+        <h2>${d.bed_id} <span class="badge ${d.bed_risk_tier}">${d.bed_risk_tier}</span></h2>
+        <div class="meta">${d.region_id} • ${d.site}</div>
+        <p><b>Decline probability:</b> ${(d.bed_decline_prob * 100).toFixed(1)}%<br>
+           <b>GPI:</b> ${d.bed_GPI.toFixed(3)}<br>
+           <b>High-risk pixels:</b> ${(d.high_risk_pixel_frac * 100).toFixed(1)}%<br>
+           <b>Confidence:</b> ${d.bed_confidence} (${d.n_pixels} px)</p>
+        <p><b>Stressor:</b> ${d.stress_phrase}</p>
+        <p><b>Top spectral drivers:</b></p>
+        ${d.explanations.map(e => `
+          <div class="shap-row">
+            <span class="shap-bar" style="width:${Math.min(120, e.mean_abs_shap * 1000)}px"></span>
+            ${e.ecological_phrase}
+          </div>`).join('')}
+      `;
+
+      // Draw polygon
+      bedLayer.clearLayers();
+      pixelLayer.clearLayers();
+      if (d.polygon && d.polygon.length) {
+        const latlngs = d.polygon.map(([lon, lat]) => [lat, lon]);
+        const poly = L.polygon(latlngs, {
+          color: RISK_COLOR[d.bed_risk_tier] || '#888',
+          weight: 2, fillOpacity: 0.25,
+        }).addTo(bedLayer);
+        map.fitBounds(poly.getBounds(), { padding: [30, 30] });
+      }
+
+      // Pixel heatmap
+      try {
+        const pixels = await fetchJSON('/beds/' + encodeURIComponent(bedId) + '/pixels');
+        for (const p of pixels) {
+          L.circleMarker([p.latitude, p.longitude], {
+            radius: 3,
+            color: RISK_COLOR[p.risk_tier] || '#888',
+            fillOpacity: 0.7,
+            stroke: false,
+          }).bindTooltip(
+            `decline=${(p.predicted_decline_prob * 100).toFixed(0)}% • ${p.predicted_stress} • ${p.confidence}`
+          ).addTo(pixelLayer);
+        }
+      } catch (e) {}
+    }
+
+    loadStatus();
+    loadBeds();
+  </script>
+</body>
+</html>

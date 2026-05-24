@@ -1,0 +1,4 @@
+fold,model,metric,value,test_years
+0,gpi,skipped,True,"[2017, 2018]"
+0,decline,skipped,True,"[2017, 2018]"
+0,stress,skipped,True,"[2017, 2018]"

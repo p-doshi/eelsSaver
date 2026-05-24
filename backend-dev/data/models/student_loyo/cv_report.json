@@ -1,0 +1,246 @@
+{
+  "strategy": "loyo",
+  "feature_count": 84,
+  "features_kept": [
+    "sin_doy",
+    "cos_doy",
+    "B2_mean",
+    "B2_std",
+    "B2_min",
+    "B2_trend",
+    "B2_n_valid",
+    "B3_min",
+    "B3_trend",
+    "B4_min",
+    "B4_trend",
+    "B5_mean",
+    "B5_std",
+    "B5_min",
+    "B5_max",
+    "B5_trend",
+    "B6_mean",
+    "B6_median",
+    "B6_std",
+    "B6_min",
+    "B6_max",
+    "B6_trend",
+    "B8_mean",
+    "B8_std",
+    "B8_min",
+    "B8_max",
+    "B8A_std",
+    "B8A_max",
+    "B11_mean",
+    "B11_std",
+    "B11_min",
+    "B11_max",
+    "B11_trend",
+    "B12_mean",
+    "B12_std",
+    "B12_min",
+    "B12_max",
+    "B12_trend",
+    "NDAVI_mean",
+    "NDAVI_std",
+    "NDAVI_max",
+    "NDAVI_trend",
+    "WAVI_mean",
+    "WAVI_std",
+    "WAVI_min",
+    "WAVI_max",
+    "WAVI_trend",
+    "GB_ratio_mean",
+    "GB_ratio_median",
+    "GB_ratio_min",
+    "GB_ratio_trend",
+    "RG_ratio_mean",
+    "RG_ratio_median",
+    "RG_ratio_std",
+    "RG_ratio_min",
+    "RG_ratio_max",
+    "RG_ratio_trend",
+    "B3B2_diff_mean",
+    "B3B2_diff_median",
+    "B3B2_diff_std",
+    "B3B2_diff_min",
+    "B3B2_diff_max",
+    "B3B2_diff_trend",
+    "NDWI_mean",
+    "NDWI_std",
+    "NDWI_min",
+    "NDWI_trend",
+    "red_edge_slope_mean",
+    "red_edge_slope_median",
+    "red_edge_slope_std",
+    "red_edge_slope_min",
+    "red_edge_slope_max",
+    "red_edge_slope_trend",
+    "SABI_mean",
+    "SABI_std",
+    "SABI_min",
+    "SABI_max",
+    "SABI_trend",
+    "depth_invariant_mean",
+    "depth_invariant_median",
+    "depth_invariant_std",
+    "depth_invariant_min",
+    "depth_invariant_max",
+    "depth_invariant_trend"
+  ],
+  "features_dropped": [
+    "B2_median",
+    "B2_max",
+    "B3_mean",
+    "B3_median",
+    "B3_std",
+    "B3_max",
+    "B3_n_valid",
+    "B4_mean",
+    "B4_median",
+    "B4_std",
+    "B4_max",
+    "B4_n_valid",
+    "B5_median",
+    "B5_n_valid",
+    "B6_n_valid",
+    "B8_median",
+    "B8_trend",
+    "B8_n_valid",
+    "B8A_mean",
+    "B8A_median",
+    "B8A_min",
+    "B8A_trend",
+    "B8A_n_valid",
+    "B11_median",
+    "B11_n_valid",
+    "B12_median",
+    "B12_n_valid",
+    "NDAVI_median",
+    "NDAVI_min",
+    "NDAVI_n_valid",
+    "WAVI_median",
+    "WAVI_n_valid",
+    "GB_ratio_std",
+    "GB_ratio_max",
+    "GB_ratio_n_valid",
+    "RG_ratio_n_valid",
+    "B3B2_diff_n_valid",
+    "NDWI_median",
+    "NDWI_max",
+    "NDWI_n_valid",
+    "turbidity_mean",
+    "turbidity_median",
+    "turbidity_std",
+    "turbidity_min",
+    "turbidity_max",
+    "turbidity_trend",
+    "turbidity_n_valid",
+    "red_edge_slope_n_valid",
+    "SABI_median",
+    "SABI_n_valid",
+    "depth_invariant_n_valid"
+  ],
+  "folds": [
+    {
+      "fold": 0,
+      "train_years": [
+        2017
+      ],
+      "test_years": [
+        2016
+      ],
+      "gpi": {
+        "mae": 0.021343551022205864,
+        "r2": -1.4783350880866428e+29
+      },
+      "decline": {
+        "mae": 1.0,
+        "r2": null
+      },
+      "stress": {
+        "macro_f1": 0.0,
+        "classes": [
+          "cold"
+        ]
+      }
+    },
+    {
+      "fold": 1,
+      "train_years": [
+        2016
+      ],
+      "test_years": [
+        2017
+      ],
+      "gpi": {
+        "mae": 0.021343545951917564,
+        "r2": -3.69583596428007e+28
+      },
+      "decline": {
+        "mae": 1.0,
+        "r2": null
+      },
+      "stress": {
+        "macro_f1": 0.0,
+        "classes": [
+          "cold"
+        ]
+      }
+    },
+    {
+      "fold": 2,
+      "train_years": [
+        2016
+      ],
+      "test_years": [
+        2018
+      ],
+      "gpi": {
+        "mae": 0.031469241831179606,
+        "r2": null
+      },
+      "decline": {
+        "mae": 0.0,
+        "r2": null
+      },
+      "stress": {
+        "macro_f1": 0.0,
+        "classes": [
+          "cold"
+        ]
+      }
+    }
+  ],
+  "aggregate": {
+    "gpi_mae": {
+      "mean": 0.024718779601767677,
+      "std": 0.004773297618561283,
+      "n": 3
+    },
+    "gpi_r2": {
+      "mean": -9.239593422573249e+28,
+      "std": 5.543757458293179e+28,
+      "n": 2
+    },
+    "decline_mae": {
+      "mean": 0.6666666666666666,
+      "std": 0.4714045207910317,
+      "n": 3
+    },
+    "decline_brier": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "decline_auc": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "stress_macro_f1": {
+      "mean": 0.0,
+      "std": 0.0,
+      "n": 3
+    }
+  }
+}
