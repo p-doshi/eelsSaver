@@ -143,6 +143,22 @@
           <ul id="driverList" class="tag-list"></ul>
         </div>
 
+        <div class="detail-block" id="confidenceBlock" hidden>
+          <h4>Why this confidence?</h4>
+          <p id="confidenceHeadline" class="muted"></p>
+          <ul id="confidenceFactors" class="report-list"></ul>
+        </div>
+
+        <div class="detail-block" id="pixelLegendBlock" hidden>
+          <h4>Per-pixel heatmap</h4>
+          <div class="layer-toggle">
+            <button class="layer-btn active" data-pixel-mode="decline">Depletion risk</button>
+            <button class="layer-btn" data-pixel-mode="gpi">Coverage (GPI)</button>
+            <button class="layer-btn" data-pixel-mode="confidence">Confidence</button>
+          </div>
+          <p id="pixelLegend" class="muted"></p>
+        </div>
+
         <div class="detail-block">
           <h4>Reports</h4>
           <ul id="reportList" class="report-list"></ul>

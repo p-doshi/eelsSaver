@@ -1,17 +1,24 @@
 """
-Build the ~140-column pixel × 90-day-window feature matrix expected by the
-trained XGBoost students (backend-dev/pipeline/student.py).
+Build the pixel × 90-day-window feature matrix expected by the trained
+XGBoost students, sourcing pixel data from Google Earth Engine
+(COPERNICUS/S2_SR_HARMONIZED).
+
+This file mirrors backend-dev/gee/forillon_extraction.js so inference uses
+the same preprocessing chain as training: same collection, same scaling
+(DN / 10000), same 10 index formulas, same sample-at-10m semantics.
 
 Flow:
-    1. STAC search for Sentinel-2 L2A scenes covering bbox in [start, end].
-    2. For each scene, sample a PIXEL_GRID × PIXEL_GRID grid of reflectances
-       for bands B2..B12 from the signed COGs (Microsoft Planetary Computer).
-    3. Compute the 10 spectral indices used by the GEE extraction script.
-    4. Run backend-dev's `pipeline.s2_features.compute_pixel_window_features`
-       to produce the rolling-window feature matrix.
+    1. Build a PIXEL_GRID × PIXEL_GRID lat/lon point grid inside the bbox.
+    2. Filter COPERNICUS/S2_SR_HARMONIZED by bbox, date, cloud.
+    3. Server-side: divide-by-10000 + compute the 10 indices per image.
+    4. sampleRegions our fixed point grid for each image, tag DATE+CLOUD_PCT.
+    5. .getInfo() pulls the FeatureCollection to Python in one shot.
+    6. Run pipeline.s2_features.compute_pixel_window_features (reused).
 
-Reuses the pipeline directly via sys.path so the feature schema stays in
-sync with what student.py was trained on.
+Auth:
+    Run `earthengine authenticate --project=<GEE_PROJECT>` once on the host
+    before starting the server. Credentials cache to
+    ~/.config/earthengine/credentials and are reused across restarts.
 """
 
 from __future__ import annotations
@@ -22,15 +29,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-import numpy as np
+import ee
 import pandas as pd
-import planetary_computer
-import rasterio
-from pystac_client import Client
-from rasterio.enums import Resampling
-from rasterio.warp import transform as rio_transform
-from rasterio.warp import transform_bounds
-from rasterio.windows import from_bounds
 
 from app.config import settings
 
@@ -44,136 +44,108 @@ if str(_BACKEND_DEV) not in sys.path:
 
 from pipeline.s2_features import compute_pixel_window_features  # noqa: E402
 
-# Planetary Computer Sentinel-2 asset keys → the column names the pipeline expects.
-_BAND_TO_COL = {
-    "B02": "B2",
-    "B03": "B3",
-    "B04": "B4",
-    "B05": "B5",
-    "B06": "B6",
-    "B08": "B8",
-    "B8A": "B8A",
-    "B11": "B11",
-    "B12": "B12",
-}
-_S2_REFLECTANCE_SCALE = 10_000.0  # S2 L2A surface reflectance is stored as int * 10_000
+_BANDS = ["B2", "B3", "B4", "B5", "B6", "B8", "B8A", "B11", "B12"]
+_INDICES = [
+    "NDAVI", "WAVI", "GB_ratio", "RG_ratio", "B3B2_diff",
+    "NDWI", "turbidity", "red_edge_slope", "SABI", "depth_invariant",
+]
+_FEATURE_PROPS = (
+    ["SITE", "DATE", "CLOUD_PCT", "longitude", "latitude"]
+    + _BANDS + _INDICES
+)
+
+_ee_initialized = False
 
 
-def search_scenes(
-    bbox: List[float],
-    datetime_start: str,
-    datetime_end: str,
-    max_cloud: float,
-) -> List[Any]:
-    """Return up to `settings.max_scenes` STAC items, oldest first."""
-    catalog = Client.open(settings.stac_url, modifier=planetary_computer.sign_inplace)
-    search = catalog.search(
-        collections=[settings.stac_collection],
-        bbox=bbox,
-        datetime=f"{datetime_start}/{datetime_end}",
-        query={"eo:cloud_cover": {"lt": max_cloud}},
-    )
-    items = list(search.items())
-    items.sort(key=lambda it: it.datetime)
-    return items[: settings.max_scenes]
-
-
-def _read_band(href: str, bbox: List[float], grid: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Read a single COG band over `bbox` (lon/lat) and resample to `grid × grid`.
-
-    Returns (reflectance_grid, lon_grid, lat_grid), each shaped (grid * grid,).
-    """
-    with rasterio.open(href) as src:
-        bounds_native = transform_bounds("EPSG:4326", src.crs, *bbox)
-        window = from_bounds(*bounds_native, transform=src.transform)
-        arr = src.read(
-            1,
-            window=window,
-            out_shape=(grid, grid),
-            resampling=Resampling.average,
-        ).astype("float32")
-
-        # Compute the affine of the down-sampled output and pull pixel-center coords.
-        win_transform = src.window_transform(window)
-        out_transform = win_transform * win_transform.scale(
-            window.width / grid, window.height / grid
+def _ensure_ee() -> None:
+    """Lazy ee.Initialize so import-time failures don't crash the server."""
+    global _ee_initialized
+    if _ee_initialized:
+        return
+    if not settings.gee_project:
+        raise RuntimeError(
+            "GEE_PROJECT is not set. Add it to .env or export the variable, then restart."
         )
-        rows, cols = np.meshgrid(np.arange(grid), np.arange(grid), indexing="ij")
-        xs, ys = rasterio.transform.xy(out_transform, rows.ravel() + 0.5, cols.ravel() + 0.5)
-        lon, lat = rio_transform(src.crs, "EPSG:4326", xs, ys)
-
-    refl = arr.ravel() / _S2_REFLECTANCE_SCALE
-    # Treat nodata (0) and absurd values as NaN.
-    refl = np.where((refl > 0) & (refl < 2.0), refl, np.nan)
-    return refl, np.asarray(lon), np.asarray(lat)
-
-
-def _add_indices(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute the 10 indices the pipeline was trained on."""
-    eps = 1e-6
-    B2, B3, B4, B5 = df["B2"], df["B3"], df["B4"], df["B5"]
-    B6, B8, _B8A, B11, B12 = df["B6"], df["B8"], df["B8A"], df["B11"], df["B12"]
-
-    df["NDAVI"] = (B8 - B2) / (B8 + B2 + eps)
-    df["WAVI"] = 1.5 * (B8 - B2) / (B8 + B2 + 0.5)
-    df["GB_ratio"] = B3 / (B2 + eps)
-    df["RG_ratio"] = B4 / (B3 + eps)
-    df["B3B2_diff"] = B3 - B2
-    df["NDWI"] = (B3 - B8) / (B3 + B8 + eps)
-    df["turbidity"] = (B4 + B3) / (B11 + B12 + eps)
-    df["red_edge_slope"] = (B6 - B5) / (B6 + B5 + eps)
-    df["SABI"] = (B8 - B4) / (B2 + B3 + eps)
-    # Lyzenga depth-invariant index — log ratio, well-defined only for positive reflectance.
-    safe_b2 = np.clip(B2.values, eps, None)
-    safe_b3 = np.clip(B3.values, eps, None)
-    df["depth_invariant"] = np.log(safe_b2) - np.log(safe_b3)
-    return df
+    try:
+        ee.Initialize(project=settings.gee_project, opt_url="https://earthengine.googleapis.com")
+    except Exception as exc:
+        raise RuntimeError(
+            "Earth Engine initialization failed. Run "
+            f"`earthengine authenticate --project={settings.gee_project}` "
+            f"once on this host, then restart the server. Underlying error: {exc}"
+        ) from exc
+    _ee_initialized = True
+    log.info("Earth Engine initialized for project=%s", settings.gee_project)
 
 
-def build_scene_pixel_dataframe(
-    items: List[Any],
-    bbox: List[float],
-    site_name: str,
-    grid: int,
-) -> pd.DataFrame:
-    """Match the GEE-export schema that pipeline.s2_features.load_gee_export() expects."""
-    scene_frames = []
+# ---------------------------------------------------------------------------
+# Server-side image preprocessing — direct port of forillon_extraction.js
+# ---------------------------------------------------------------------------
 
-    for item in items:
-        per_band: Dict[str, np.ndarray] = {}
-        lon = lat = None
-        for asset_key, col in _BAND_TO_COL.items():
-            asset = item.assets.get(asset_key)
-            if asset is None:
-                per_band[col] = np.full(grid * grid, np.nan, dtype="float32")
-                continue
-            try:
-                refl, lon, lat = _read_band(asset.href, bbox, grid)
-            except Exception as exc:
-                log.warning("Failed to read %s for %s: %s", asset_key, item.id, exc)
-                per_band[col] = np.full(grid * grid, np.nan, dtype="float32")
-                continue
-            per_band[col] = refl
+def _add_indices(image: "ee.Image") -> "ee.Image":
+    s = 10_000
+    refl = image.select(_BANDS).divide(s).rename(_BANDS)
+    eps = ee.Image(1e-6)
 
-        if lon is None or lat is None:
-            continue
+    B2 = refl.select("B2")
+    B3 = refl.select("B3")
+    B4 = refl.select("B4")
+    B5 = refl.select("B5")
+    B6 = refl.select("B6")
+    B8 = refl.select("B8")
+    B11 = refl.select("B11")
+    B12 = refl.select("B12")
 
-        scene_df = pd.DataFrame(per_band)
-        scene_df["DATE"] = pd.Timestamp(item.datetime).tz_localize(None)
-        scene_df["SITE"] = site_name
-        scene_df["CLOUD_PCT"] = float(item.properties.get("eo:cloud_cover", 0.0))
-        scene_df["latitude"] = lat
-        scene_df["longitude"] = lon
-        scene_frames.append(scene_df)
+    NDAVI = B8.subtract(B4).divide(B8.add(B4).add(eps)).rename("NDAVI")
+    WAVI = (
+        B8.subtract(B4).multiply(1.5)
+        .divide(B8.add(B4).add(0.5))
+        .rename("WAVI")
+    )
+    GB = B3.divide(B2.add(eps)).rename("GB_ratio")
+    RG = B4.divide(B3.add(eps)).rename("RG_ratio")
+    B3B2 = B3.subtract(B2).rename("B3B2_diff")
+    NDWI = B3.subtract(B8).divide(B3.add(B8).add(eps)).rename("NDWI")
+    TURB = B4.divide(B3.add(eps)).rename("turbidity")
+    # forillon_extraction.js uses .divide(35) for the red-edge slope — kept identical.
+    RES = B6.subtract(B5).divide(35).rename("red_edge_slope")
+    SABI = B8.subtract(B4).divide(B3.add(B2).add(eps)).rename("SABI")
+    DEPTH = B2.log().divide(B3.log().add(eps)).rename("depth_invariant")
 
-    if not scene_frames:
-        return pd.DataFrame()
+    return (
+        refl.addBands([NDAVI, WAVI, GB, RG, B3B2, NDWI, TURB, RES, SABI, DEPTH])
+        .set("system:time_start", image.get("system:time_start"))
+        .set("CLOUDY_PIXEL_PERCENTAGE", image.get("CLOUDY_PIXEL_PERCENTAGE"))
+    )
 
-    df = pd.concat(scene_frames, ignore_index=True)
-    df = df.dropna(subset=["B2", "B3", "B4"], how="all")
-    df = _add_indices(df)
-    return df
 
+# ---------------------------------------------------------------------------
+# Sampling grid
+# ---------------------------------------------------------------------------
+
+def _build_point_grid(bbox: List[float], grid: int, site_name: str) -> "ee.FeatureCollection":
+    """Fixed lat/lon grid inside bbox. Same grid for every scene so pipeline.s2_features
+    can group by pixel_id across the time series."""
+    lon_min, lat_min, lon_max, lat_max = bbox
+    dx = (lon_max - lon_min) / grid
+    dy = (lat_max - lat_min) / grid
+    feats = []
+    for i in range(grid):
+        lat = lat_min + dy * (i + 0.5)
+        for j in range(grid):
+            lon = lon_min + dx * (j + 0.5)
+            feats.append(
+                ee.Feature(
+                    ee.Geometry.Point([lon, lat]),
+                    {"longitude": lon, "latitude": lat, "SITE": site_name},
+                )
+            )
+    return ee.FeatureCollection(feats)
+
+
+# ---------------------------------------------------------------------------
+# Main entry — replaces the previous Planetary Computer implementation
+# ---------------------------------------------------------------------------
 
 def build_feature_matrix(
     bbox: List[float],
@@ -182,25 +154,95 @@ def build_feature_matrix(
     max_cloud: float,
     site_name: str = "bbox_query",
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Run the full STAC → pixel → 90-day-rolling-features pipeline.
+    """STAC search → indices → sample → 90-day rolling features, all via GEE."""
+    _ensure_ee()
 
-    Returns (features_df, meta). `meta` carries summary stats the API surfaces
-    to the frontend (scene_count, mean_cloud, etc.) even when the model run
-    itself fails.
-    """
-    items = search_scenes(bbox, datetime_start, datetime_end, max_cloud)
-    if not items:
+    region = ee.Geometry.Rectangle(bbox)
+    grid = settings.pixel_grid
+    points = _build_point_grid(bbox, grid, site_name)
+
+    collection = (
+        ee.ImageCollection(settings.gee_collection)
+        .filterBounds(region)
+        .filterDate(datetime_start, datetime_end)
+        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", max_cloud))
+        .sort("system:time_start")
+        .limit(settings.max_scenes)
+    )
+
+    n_scenes = int(collection.size().getInfo())
+    if n_scenes == 0:
         raise ValueError(
             f"No Sentinel-2 scenes found for bbox={bbox} "
-            f"in [{datetime_start}, {datetime_end}] with cloud < {max_cloud}%."
+            f"in [{datetime_start}, {datetime_end}] with cloud < {max_cloud}% "
+            "(GEE COPERNICUS/S2_SR_HARMONIZED)."
         )
 
-    pixel_df = build_scene_pixel_dataframe(items, bbox, site_name, settings.pixel_grid)
-    if pixel_df.empty:
-        raise ValueError("All STAC scenes failed to load — none yielded usable pixels.")
+    scaled = collection.map(_add_indices)
 
-    pixel_df["pixel_lat"] = pixel_df["latitude"].round(4)
-    pixel_df["pixel_lon"] = pixel_df["longitude"].round(4)
+    def _sample_image(image):
+        date = ee.Date(image.get("system:time_start")).format("YYYY-MM-dd")
+        cloud = ee.Number(image.get("CLOUDY_PIXEL_PERCENTAGE"))
+        sampled = image.sampleRegions(
+            collection=points,
+            scale=10,
+            projection="EPSG:4326",
+            geometries=False,
+        )
+        return sampled.map(
+            lambda f: f.set({"DATE": date, "CLOUD_PCT": cloud})
+        )
+
+    # GEE's getInfo() refuses any FeatureCollection result > 5000 elements,
+    # so we batch scenes such that (scenes_per_batch × grid²) stays under that.
+    # Use 4500 as a safety margin.
+    pixels_per_scene = grid * grid
+    scenes_per_batch = max(1, 4500 // pixels_per_scene)
+
+    all_rows: List[Dict[str, Any]] = []
+    n_batches = (n_scenes + scenes_per_batch - 1) // scenes_per_batch
+    for b in range(n_batches):
+        offset = b * scenes_per_batch
+        batch_list = scaled.toList(scenes_per_batch, offset)
+        batch_ic = ee.ImageCollection(batch_list)
+        batch_fc = batch_ic.map(_sample_image).flatten()
+        try:
+            result = batch_fc.select(_FEATURE_PROPS).getInfo()
+        except ee.EEException as exc:
+            raise RuntimeError(
+                f"Earth Engine request failed on batch {b + 1}/{n_batches}: {exc}. "
+                f"If this is an auth error, run "
+                f"`earthengine authenticate --project={settings.gee_project}`."
+            ) from exc
+        batch_features = result.get("features", [])
+        log.info(
+            "GEE batch %d/%d (scenes %d–%d): %d pixel-scene rows",
+            b + 1, n_batches,
+            offset + 1, min(offset + scenes_per_batch, n_scenes),
+            len(batch_features),
+        )
+        all_rows.extend(f["properties"] for f in batch_features)
+
+    if not all_rows:
+        raise ValueError(
+            "Earth Engine returned 0 sampled pixels. The bbox may not "
+            "intersect any cloud-free Sentinel-2 scenes in that date range."
+        )
+
+    pixel_df = pd.DataFrame(all_rows)
+
+    # Drop sample failures (sampleRegions emits null for masked/missing bands)
+    pixel_df = pixel_df.dropna(subset=["B2", "B3", "B4"], how="all")
+    if pixel_df.empty:
+        raise ValueError(
+            "All sampled pixels were masked out by GEE (likely ocean nodata or cloud mask)."
+        )
+
+    pixel_df["DATE"] = pd.to_datetime(pixel_df["DATE"])
+
+    # Match the schema pipeline.s2_features.load_gee_export() expects.
+    pixel_df["pixel_lat"] = pixel_df["latitude"].astype(float).round(4)
+    pixel_df["pixel_lon"] = pixel_df["longitude"].astype(float).round(4)
     pixel_df["pixel_id"] = (
         pixel_df["pixel_lat"].astype(str)
         + "_"
@@ -212,11 +254,14 @@ def build_feature_matrix(
     features = compute_pixel_window_features(pixel_df)
 
     meta = {
-        "scene_count": int(len(items)),
+        "scene_count": n_scenes,
         "mean_cloud_cover": float(pixel_df["CLOUD_PCT"].mean()),
         "date_min": pixel_df["DATE"].min().isoformat(),
         "date_max": pixel_df["DATE"].max().isoformat(),
         "pixel_count": int(pixel_df["pixel_id"].nunique()),
         "window_count": int(features["window_center"].nunique()) if not features.empty else 0,
+        "bbox": list(bbox),
+        "pixel_grid": grid,
+        "data_source": f"earthengine:{settings.gee_collection}",
     }
     return features, meta

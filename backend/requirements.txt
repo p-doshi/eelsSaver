@@ -9,11 +9,15 @@ numpy>=1.24,<2.0
 shapely==2.0.6
 orjson==3.10.7
 
-# Live S2 inference: pull bbox + date range from Microsoft Planetary Computer,
+# Live S2 inference: pull bbox + date range from Google Earth Engine,
 # run the trained XGBoost models from backend-dev/data/models/
 pandas>=2.0
 scipy>=1.10
 xgboost>=2.0
+earthengine-api>=0.1.400
+
+# rasterio + planetary-computer + pystac-client retained because
+# scripts/generate_overlays.py uses them. Live inference no longer does.
 rasterio>=1.3
 pystac-client>=0.7
 planetary-computer>=1.0

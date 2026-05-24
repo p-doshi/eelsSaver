@@ -52,7 +52,7 @@ async def run_inference_job(job_id: str, req):
             job_id,
             "features",
             35,
-            "Streaming pixels and computing spectral indices.",
+            "Asking Earth Engine to compute spectral indices and sample pixels.",
         )
 
         loop = asyncio.get_running_loop()
@@ -84,7 +84,7 @@ async def run_inference_job(job_id: str, req):
             "area_name": req.name,
             "bbox": req.bbox,
             "scene_count": int(meta["scene_count"]),
-            "source": "sentinel-2-l2a-planetary-computer",
+            "source": meta.get("data_source", "earthengine"),
             "date_range": [meta["date_min"], meta["date_max"]],
             "status": "completed",
             **pred,

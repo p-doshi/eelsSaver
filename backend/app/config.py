@@ -12,10 +12,11 @@ class Settings(BaseModel):
     host: str = os.getenv("APP_HOST", "0.0.0.0")
     port: int = int(os.getenv("APP_PORT", "8000"))
 
-    # Live STAC source. Planetary Computer is the default because it serves
-    # signed COG URLs that rasterio can stream from directly (no auth dance).
-    stac_url: str = os.getenv("STAC_URL", "https://planetarycomputer.microsoft.com/api/stac/v1")
-    stac_collection: str = os.getenv("STAC_COLLECTION", "sentinel-2-l2a")
+    # Live data source: Google Earth Engine (COPERNICUS/S2_SR_HARMONIZED).
+    # GEE_PROJECT must be set — without it ee.Initialize() raises.
+    # Authenticate once on the host: `earthengine authenticate --project=<id>`
+    gee_project: str = os.getenv("GEE_PROJECT", "northern-hope-497221-m7")
+    gee_collection: str = os.getenv("GEE_COLLECTION", "COPERNICUS/S2_SR_HARMONIZED")
 
     # Trained XGBoost artifacts produced by backend-dev/pipeline/student.py.
     # MODELS_DIR should contain gpi_model.pkl, decline_model.pkl, stress_model.pkl,

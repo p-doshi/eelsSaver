@@ -6,6 +6,9 @@ const state = {
   selectedFeature: null,
   previewOverlay: null,
   fancyOverlay: null,
+  pixelLayer: null,
+  lastResult: null,
+  pixelMode: "decline",
 };
 
 function fullAssetUrl(path) {
@@ -132,6 +135,120 @@ function fillDrawer(props) {
   });
 
   $("imageryCredit").textContent = props.imagery?.credit || "No imagery source provided.";
+
+  // Confidence explanation block (only populated for live inference results).
+  const confBlock = $("confidenceBlock");
+  if (props.confidence_headline || (props.confidence_factors || []).length) {
+    confBlock.hidden = false;
+    $("confidenceHeadline").textContent = props.confidence_headline || "";
+    const factorList = $("confidenceFactors");
+    factorList.innerHTML = "";
+    (props.confidence_factors || []).forEach(f => {
+      const li = document.createElement("li");
+      li.textContent = f;
+      factorList.appendChild(li);
+    });
+  } else {
+    confBlock.hidden = true;
+  }
+}
+
+// Linear interpolation across three stops (green → yellow → red).
+function interpRGB(t) {
+  t = Math.max(0, Math.min(1, t));
+  const stops = [
+    [0.0, [82, 183, 136]],     // green
+    [0.5, [255, 209, 102]],    // yellow
+    [1.0, [255, 77, 109]],     // red
+  ];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, c0] = stops[i];
+    const [t1, c1] = stops[i + 1];
+    if (t <= t1) {
+      const u = (t - t0) / (t1 - t0);
+      return c0.map((v, k) => Math.round(v + (c1[k] - v) * u));
+    }
+  }
+  return stops[stops.length - 1][1];
+}
+
+function pixelColor(value, mode) {
+  // For decline & confidence: high value = red. For GPI: high value = green (invert).
+  const t = mode === "gpi" ? 1.0 - value : value;
+  const [r, g, b] = interpRGB(t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function pixelMetric(pixel, mode) {
+  if (mode === "gpi") return pixel.gpi;
+  if (mode === "confidence") return pixel.confidence;
+  return pixel.decline_prob;
+}
+
+function pixelTooltip(pixel) {
+  return `
+    <div style="font-family:Inter,sans-serif;font-size:12px;min-width:160px">
+      <div><strong>Coverage (GPI):</strong> ${(pixel.gpi * 100).toFixed(0)}%</div>
+      <div><strong>Depletion risk:</strong> ${(pixel.decline_prob * 100).toFixed(0)}%</div>
+      <div><strong>Confidence:</strong> ${(pixel.confidence * 100).toFixed(0)}%</div>
+      <div><strong>Stress:</strong> ${pixel.stress}</div>
+      <div style="opacity:.7;margin-top:4px">
+        ${pixel.valid_obs} valid passes · ${pixel.in_distribution ? "in" : "out of"} training distribution
+      </div>
+    </div>`;
+}
+
+function renderPixelHeatmap(result, mode) {
+  if (state.pixelLayer) {
+    state.map.removeLayer(state.pixelLayer);
+    state.pixelLayer = null;
+  }
+
+  const pixels = result.pixels || [];
+  if (!pixels.length) return;
+
+  const [dx, dy] = result.pixel_size_deg || [0.001, 0.001];
+  const halfDx = dx / 2;
+  const halfDy = dy / 2;
+
+  const rectangles = pixels.map(p => {
+    const v = pixelMetric(p, mode);
+    return L.rectangle(
+      [[p.lat - halfDy, p.lon - halfDx], [p.lat + halfDy, p.lon + halfDx]],
+      {
+        color: pixelColor(v, mode),
+        fillColor: pixelColor(v, mode),
+        weight: 0,
+        fillOpacity: 0.78,
+        interactive: true,
+      }
+    ).bindTooltip(pixelTooltip(p), { sticky: true, opacity: 0.95 });
+  });
+
+  state.pixelLayer = L.layerGroup(rectangles).addTo(state.map);
+}
+
+function updatePixelLegend(mode) {
+  const el = $("pixelLegend");
+  if (!el) return;
+  const captions = {
+    decline:    "Green = low depletion risk · Red = high depletion risk.",
+    gpi:        "Green = healthy eelgrass coverage · Red = sparse / stressed.",
+    confidence: "Green = high-confidence pixel · Red = low-confidence pixel.",
+  };
+  el.textContent = captions[mode] || "";
+}
+
+function setupPixelModeButtons() {
+  document.querySelectorAll("[data-pixel-mode]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-pixel-mode]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.pixelMode = btn.dataset.pixelMode;
+      updatePixelLegend(state.pixelMode);
+      if (state.lastResult) renderPixelHeatmap(state.lastResult, state.pixelMode);
+    });
+  });
 }
 
 async function loadHotspots() {
@@ -266,16 +383,29 @@ function connectJob(jobId) {
     $("progressBar").style.width = `${msg.progress || 0}%`;
 
     if (msg.stage === "completed" && msg.result) {
-      addInferencePolygon(msg.result);
+      const r = msg.result;
+      addInferencePolygon(r);
+      state.lastResult = r;
+
+      if (r.pixels && r.pixels.length) {
+        $("pixelLegendBlock").hidden = false;
+        renderPixelHeatmap(r, state.pixelMode);
+        updatePixelLegend(state.pixelMode);
+      } else {
+        $("pixelLegendBlock").hidden = true;
+      }
+
       fillDrawer({
-        name: msg.result.area_name,
-        risk_level: msg.result.depletion_risk_90d > 0.7 ? "high" : msg.result.depletion_risk_90d > 0.45 ? "moderate" : "low",
-        eelgrass_pct_estimate: msg.result.eelgrass_pct_estimate,
-        depletion_risk_90d: msg.result.depletion_risk_90d,
-        confidence: msg.result.confidence,
-        summary: `Live model result from Sentinel-2 query using ${msg.result.scene_count} scenes.`,
-        drivers: msg.result.top_drivers,
+        name: r.area_name,
+        risk_level: r.risk_tier || (r.depletion_risk_90d > 0.7 ? "high" : r.depletion_risk_90d > 0.45 ? "moderate" : "low"),
+        eelgrass_pct_estimate: r.eelgrass_pct_estimate,
+        depletion_risk_90d: r.depletion_risk_90d,
+        confidence: r.confidence,
+        summary: `Live model result from Sentinel-2 (${r.scene_count} scenes, ${r.pixels_scored || 0} pixels scored, ${r.confidence_tier || "n/a"} confidence).`,
+        drivers: r.top_drivers,
         reports: [],
+        confidence_headline: r.confidence_headline,
+        confidence_factors: r.confidence_factors,
       });
       ws.close();
     }
@@ -305,8 +435,8 @@ function addInferencePolygon(result) {
   const poly = L.polygon(bboxToPolygon(result.bbox), {
     color: riskColor(riskLevel),
     fillColor: riskColor(riskLevel),
-    fillOpacity: 0.28,
-    weight: 2,
+    fillOpacity: 0.05,
+    weight: 1.5,
     dashArray: "8 6",
   }).addTo(state.map);
   const centerLat = (result.bbox[1] + result.bbox[3]) / 2;
@@ -364,6 +494,7 @@ function wireForm() {
 async function main() {
   setupThemeToggle();
   setupLayerButtons();
+  setupPixelModeButtons();
   initMap();
   wireForm();
   await loadHotspots();
