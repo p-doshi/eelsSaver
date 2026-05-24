@@ -143,27 +143,33 @@
   "folds": [
     {
       "fold": 0,
-      "train_years": [],
+      "train_years": [
+        2016
+      ],
       "test_years": [
-        2017,
         2018
       ],
       "gpi": {
-        "skipped": true
+        "mae": 0.031469241831179606,
+        "r2": null
       },
       "decline": {
-        "skipped": true
+        "mae": 0.0,
+        "r2": null
       },
       "stress": {
-        "skipped": true
+        "macro_f1": 0.0,
+        "classes": [
+          "cold"
+        ]
       }
     }
   ],
   "aggregate": {
     "gpi_mae": {
-      "mean": null,
-      "std": null,
-      "n": 0
+      "mean": 0.031469241831179606,
+      "std": 0.0,
+      "n": 1
     },
     "gpi_r2": {
       "mean": null,
@@ -171,9 +177,9 @@
       "n": 0
     },
     "decline_mae": {
-      "mean": null,
-      "std": null,
-      "n": 0
+      "mean": 0.0,
+      "std": 0.0,
+      "n": 1
     },
     "decline_brier": {
       "mean": null,
@@ -186,9 +192,9 @@
       "n": 0
     },
     "stress_macro_f1": {
-      "mean": null,
-      "std": null,
-      "n": 0
+      "mean": 0.0,
+      "std": 0.0,
+      "n": 1
     }
   }
 }

@@ -205,15 +205,46 @@ All three sites show near-identical GPI/stress time series because the input env
 
 ## 5.3 Annual-label student (`student_loyo.py`)
 
-This was the experimental track for the annual Ouest dataset described in the brief. Results were structurally compromised: with S2 only available from 2016-2018, LOYO produced 3 folds with heavily imbalanced sizes (216 vs 30,000 rows), and tail-strategy fails outright (training years 2013-2015 have no S2 data). Reported here for completeness:
+This was the experimental track for the annual Ouest dataset described in the brief. Results were structurally compromised: with S2 only available from 2016-2018, LOYO produced 3 folds with heavily imbalanced sizes (216 vs 30,000 rows). The tail-strategy initially produced an empty report — diagnosed and fixed mid-build (see below). Reported here for completeness:
 
 | Strategy | gpi_mae | decline_mae | Notes |
 |---|---|---|---|
 | LOYO (3 folds) | 0.025 ± 0.005 | 0.667 ± 0.471 | Single training year per fold → very high variance |
 | Forward (2 folds) | n/a | 0.85 ± 0.15 | Trains on 1-2 yrs each, basically guessing on test |
-| Tail (1 fold) | skipped | skipped | Train set empty |
+| Tail (1 fold, post-fix) | 0.0315 | 0.000 | Train=[2016], val=[2017], test=[2018]; degenerate — see § 5.3.1 |
 
-**Verdict**: don't use annual-label training until S2 archives go back further (or until you augment with non-S2 sources like Landsat for 2013-2015).
+### 5.3.1 The tail-split bug, fix, and why the post-fix numbers are still degenerate
+
+**Symptom.** First `student_loyo.py --strategy tail` run produced a `cv_report.json` with `train_years: []`, all three models `{"skipped": true}`, and an empty `cv_summary.csv`.
+
+**Root cause.** `tail_split()` in `pipeline/splits.py` was hard-coded to:
+
+```python
+train_years = (2013, 2014, 2015), val_years = (2016,), test_years = (2017, 2018)
+```
+
+reflecting the documented Forillon boom-bust-recovery-crash cycle. Sentinel-2A only became operational in 2016, so your real GEE export covers **only 2016, 2017, 2018**. The intersection with the hard-coded `train_years` is empty → 0 training rows → `len(sub_tr) < 10` guard fires → all three models silently skipped → `cv_summary.csv` written with header but no data rows.
+
+**Fix.** `tail_split()` now detects when its documented train years aren't present in `df['year']` and auto-falls back to splitting whatever IS available: earliest year(s) → train, middle → val, latest year(s) → test. It prints a console warning so the user knows the fallback fired. With your 2016-2018 features the warning reads:
+
+```
+[tail_split] Documented 2013-18 split unavailable. Using fallback for years [2016, 2017, 2018]:
+  train=[2016]  val=[2017]  test=[2018]
+```
+
+**Why the post-fix numbers are still degenerate.** Even with a non-empty training set, annual labels collapse the problem. With one row per year:
+
+```
+year:      2016        2017      2018
+fold:      train       val       test
+decline_flag:   0          1         0
+GPI_annual:   0.466      0.487     0.497
+stress:       cold       cold      cold
+```
+
+The student trained on `decline_flag = 0` for all 216 train pixels is asked to predict `decline_flag = 0` for all 30,074 test pixels — a degenerate "always output 0" win. **`decline_mae = 0.0` is not real predictive skill**, it's the consequence of zero label variance in both train and test. Same logic applies to GPI (near-constant annual values 0.47-0.50) and stress (only `cold` ever appears).
+
+**Verdict.** The fix prevents the silent-failure failure mode (empty report). It doesn't fix the structural issue: 6 annual labels × 3 available years is too small for the LOYO/forward/tail framework to do real work. Use the window-level student (§ 5.2) for headline metrics. The annual student becomes useful when one of these is true: S2 archives extend backward (Landsat-8 fusion for 2013-2015), or quadrat-level coordinates let us assign per-pixel annual cover labels (turning 6 labels into hundreds-of-thousands).
 
 ## 5.4 Pan-Atlantic inference on Antigonish
 
@@ -302,7 +333,7 @@ All 27 figures live in `data/figures/`. Each tells a specific diagnostic story.
 | Limitation | Why it matters | What fixes it |
 |---|---|---|
 | Per-site env data is spatially averaged | All 3 sites get identical labels; the student can only learn spatial differentiation from the spectra, not the targets | Point-extract SST/PAR at each site centroid instead of bay-mean |
-| S2 archive starts 2016 (3 years overlap with in-situ) | Annual-label student is structurally crippled; tail strategy fails | Use Landsat 8 (2013→) to backfill the early years, or only use the window-level student |
+| S2 archive starts 2016 (3 years overlap with in-situ) | Annual-label student is structurally crippled — tail strategy used to silently fail (zero-row train set), now produces degenerate "always-0" predictions after the `tail_split` fallback fix | Use Landsat 8 (2013→) to backfill the early years, or only use the window-level student |
 | No heat-stress examples in Forillon | Model can never predict heat class until it's deployed somewhere with it | Co-train with a southern site (Antigonish, Malpeque) where heat does occur |
 | 100 % OOD flag on Antigonish | All bed scores downgraded to Medium confidence | Run `pipeline.calibration` with any 10–20 ground-truth observations from a target region |
 | Decline calibration is poor | Probability values can't be taken literally, only ranked | Isotonic calibrator wrapping student output (already wired, awaits ground truth) |

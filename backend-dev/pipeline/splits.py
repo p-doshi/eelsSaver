@@ -117,7 +117,36 @@ def tail_split(df: pd.DataFrame,
                 train_years: tuple = (2013, 2014, 2015),
                 val_years:   tuple = (2016,),
                 test_years:  tuple = (2017, 2018)) -> Iterator[tuple]:
-    """Single-fold train/val/test honouring the boom-bust-recovery-crash cycle."""
+    """Single-fold train/val/test honouring the boom-bust-recovery-crash cycle.
+
+    If the documented (2013-15, 2016, 2017-18) split has no overlap with the
+    df's actual years (e.g. Sentinel-2 archive only covers 2016+), falls back
+    to splitting whatever years ARE available: earliest year(s) → train,
+    middle → val, latest → test. Prints a warning so the user knows.
+    """
+    available = sorted(df['year'].unique().tolist())
+    train_overlap = set(available) & set(train_years)
+
+    if not train_overlap:
+        # Documented train years don't exist in the data — auto-fallback
+        if len(available) < 3:
+            print(f'[tail_split] WARNING: only {len(available)} year(s) available '
+                  f'{available}; tail split needs ≥ 3. Yielding empty fold.')
+            yield (np.array([], dtype=int),) * 3
+            return
+        # Earliest year(s) → train, next → val, latest year(s) → test
+        # For 3 years: 1/1/1. For ≥4: half/1/half.
+        n = len(available)
+        n_test  = max(1, n // 3)
+        n_val   = 1
+        n_train = n - n_val - n_test
+        train_years = tuple(available[:n_train])
+        val_years   = tuple(available[n_train:n_train + n_val])
+        test_years  = tuple(available[n_train + n_val:])
+        print(f'[tail_split] Documented 2013-18 split unavailable. '
+              f'Using fallback for years {available}:\n'
+              f'  train={list(train_years)}  val={list(val_years)}  test={list(test_years)}')
+
     train_idx = df.index[df['year'].isin(train_years)].to_numpy()
     val_idx   = df.index[df['year'].isin(val_years)].to_numpy()
     test_idx  = df.index[df['year'].isin(test_years)].to_numpy()
