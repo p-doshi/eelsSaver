@@ -11,6 +11,7 @@ from app.api.photos import router as photos_router
 
 BASE_DIR = Path(__file__).resolve().parent.parent   # backend/
 STATIC_DIR = BASE_DIR / "static"
+FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
 app = FastAPI(title=settings.app_name)
 
@@ -28,3 +29,8 @@ app.include_router(health_router)
 app.include_router(hotspots_router)
 app.include_router(inference_router)
 app.include_router(photos_router)
+
+# Serve the Leaflet UI at /. Must be mounted AFTER the API routers so
+# /api/* and /static/* take precedence over the catch-all StaticFiles.
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
